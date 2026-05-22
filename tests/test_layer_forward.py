@@ -113,6 +113,46 @@ def test_forward_multi_category_batch(synthetic_cat_linear):
         torch.testing.assert_close(y[i : i + 1], yi, atol=1e-6, rtol=1e-5)
 
 
+def test_forward_3d_input_shape(synthetic_cat_linear):
+    """Forward accepts ``(B, T, in)`` and returns ``(B, T, out)``.
+
+    Real-world shape from GR00T's projector layers (state/action encoders
+    receive ``(B, T, state_dim)``). v0.1.1 had a 2D-only einsum and crashed
+    here at training step 1; v0.1.2 flattens leading dims internally.
+    """
+    adapter = CategoryLoRALinear(synthetic_cat_linear, r=R, alpha=8)
+    with torch.no_grad():
+        adapter.B.data = torch.randn_like(adapter.B.data)
+
+    B_dim, T_dim = 3, 5
+    x_3d = torch.randn(B_dim, T_dim, IN)
+    cat_ids = torch.tensor([0, 1, 2], dtype=torch.long)
+    y_3d = adapter(x_3d, cat_ids)
+    assert y_3d.shape == (B_dim, T_dim, OUT)
+
+    # Equivalence: collapsing the time dim onto batch should give the same
+    # per-token outputs (one cat id per batch element, broadcast across T).
+    x_2d = x_3d.reshape(B_dim * T_dim, IN)
+    cat_ids_repeated = cat_ids.repeat_interleave(T_dim)
+    y_2d = adapter(x_2d, cat_ids_repeated)
+    torch.testing.assert_close(y_2d.reshape(B_dim, T_dim, OUT), y_3d, atol=1e-6, rtol=1e-5)
+
+
+def test_forward_4d_input_shape(synthetic_cat_linear):
+    """Forward accepts arbitrary leading dims, e.g. ``(B, T1, T2, in)``.
+
+    Guards the shape-generic reshape path so it doesn't regress to 3D-only.
+    """
+    adapter = CategoryLoRALinear(synthetic_cat_linear, r=R, alpha=8)
+    with torch.no_grad():
+        adapter.B.data = torch.randn_like(adapter.B.data)
+
+    x_4d = torch.randn(2, 3, 4, IN)
+    cat_ids = torch.tensor([0, 1], dtype=torch.long)
+    y_4d = adapter(x_4d, cat_ids)
+    assert y_4d.shape == (2, 3, 4, OUT)
+
+
 def test_ddp_grad_mask(synthetic_cat_linear):
     """Single-rank DDP simulation: absent categories produce zero/None grads.
 

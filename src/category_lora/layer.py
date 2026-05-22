@@ -84,11 +84,14 @@ class CategoryLoRALinear(nn.Module):
         """Compute ``base(x, cat_ids) + scale * (x @ A[c]) @ B[c]``.
 
         Args:
-            x: Shape ``(B, in)``.
-            cat_ids: Long tensor of shape ``(B,)``, values in ``[0, C)``.
+            x: Shape ``(B, ..., in)``. Any number of leading dims between batch
+                and the last (feature) dim is allowed; matches the shape that
+                GR00T's projector layers see (``(B, T, state_dim)`` etc.).
+            cat_ids: Long tensor of shape ``(B,)``, values in ``[0, C)``. The
+                same category id applies to all tokens of a given batch element.
 
         Returns:
-            Tensor of shape ``(B, out)``.
+            Tensor of shape ``(B, ..., out)``.
         """
         if self._unloaded:
             raise RuntimeError(
@@ -101,14 +104,19 @@ class CategoryLoRALinear(nn.Module):
             # Base weights already contain the merged delta; do not double-count.
             return base_out
 
-        # LoRA additive path:
-        # lora_mid = einsum("bi,bir->br", x, A[cat_ids])
-        # lora_out = einsum("br,bro->bo", lora_mid, B[cat_ids])
+        # LoRA additive path. Flatten leading dims so a single einsum handles
+        # both (B, in) and (B, T, in) (and (B, T1, T2, in), etc.).
         x_dropped = self.dropout(x)
+        B = cat_ids.shape[0]
+        in_dim = x_dropped.shape[-1]
+        leading_dims = x_dropped.shape[1:-1]  # () if 2D, (T,) if 3D, etc.
+        x_flat = x_dropped.reshape(B, -1, in_dim)  # (B, S, in) where S = prod(leading_dims) or 1
         A_sel = self.A[cat_ids]  # (B, in, r)
         B_sel = self.B[cat_ids]  # (B, r, out)
-        lora_mid = torch.einsum("bi,bir->br", x_dropped, A_sel)
-        lora_out = torch.einsum("br,bro->bo", lora_mid, B_sel)
+        lora_mid = torch.einsum("bsi,bir->bsr", x_flat, A_sel)  # (B, S, r)
+        lora_flat = torch.einsum("bsr,bro->bso", lora_mid, B_sel)  # (B, S, out)
+        out_dim = B_sel.shape[-1]
+        lora_out = lora_flat.reshape(B, *leading_dims, out_dim)
         return base_out + self.scaling * lora_out
 
     # ----- merge / unmerge -----

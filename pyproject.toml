@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "category-lora"
-version = "0.1.1"
+version = "0.1.2"
 description = "LoRA for category-indexed Linear layers (3D weight tensors)"
 readme = "README.md"
 license = {text = "MIT"}

@@ -40,11 +40,18 @@ class SyntheticCategoryLinear(nn.Module):
         self.b = nn.Parameter(torch.zeros(num_categories, out_features))
 
     def forward(self, x: torch.Tensor, cat_ids: torch.Tensor) -> torch.Tensor:
-        # x: (B, in), cat_ids: (B,) -> y: (B, out)
+        # x: (B, ..., in), cat_ids: (B,) -> y: (B, ..., out). Matches the
+        # shape contract GR00T's projector uses (the state/action encoders
+        # see (B, T, state_dim)).
         W_sel = self.W[cat_ids]  # (B, in, out)
         b_sel = self.b[cat_ids]  # (B, out)
-        y = torch.einsum("bi,bio->bo", x, W_sel) + b_sel
-        return y
+        B = cat_ids.shape[0]
+        leading_dims = x.shape[1:-1]
+        x_flat = x.reshape(B, -1, x.shape[-1])  # (B, S, in)
+        y_flat = torch.einsum("bsi,bio->bso", x_flat, W_sel)  # (B, S, out)
+        # Add bias (broadcast across S).
+        y_flat = y_flat + b_sel.unsqueeze(1)
+        return y_flat.reshape(B, *leading_dims, W_sel.shape[-1])
 
 
 @pytest.fixture(autouse=True)

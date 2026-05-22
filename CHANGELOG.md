@@ -11,6 +11,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial PLAN.md (v3, GREEN after 2 rounds of subagent review).
 - Repository scaffold: `pyproject.toml`, stub modules, test directory.
 
+## [0.1.2] - 2026-05-22
+
+### Fixed
+- ``CategoryLoRALinear.forward`` now accepts arbitrary leading dims
+  (``(B, *, in)``). v0.1.1's einsum was 2D-only and crashed at
+  training step 1 when wrapping GR00T's projector layers, which see
+  ``(B, T, state_dim)``. The base path already supported it; the LoRA
+  branch now matches.
+
+### Added
+- Tests for 3D and 4D input shapes in ``tests/test_layer_forward.py``.
+- The synthetic ``SyntheticCategoryLinear`` fixture now supports
+  arbitrary leading dims, matching GR00T's real shape contract.
+
 ## [0.1.1] - 2026-05-21
 
 ### Changed
