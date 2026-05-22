@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial PLAN.md (v3, GREEN after 2 rounds of subagent review).
 - Repository scaffold: `pyproject.toml`, stub modules, test directory.
 
-## [0.1.0] - TBD
+## [0.1.0] - 2026-05-21
 
 ### Added
 - `CategoryLoRALinear` — LoRA adapter for category-indexed Linear layers (3D weight tensors).
