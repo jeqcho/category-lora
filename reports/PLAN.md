@@ -1,7 +1,13 @@
 # category-lora — Implementation Plan
 
-**Status:** v2 (post-subagent-review-round-1)
+**Status:** v3 (post-subagent-review-round-2; addresses 1 HIGH)
 **Date:** 2026-05-21
+
+## v3 changelog (vs v2)
+
+Round-2 reviewer flagged 1 HIGH:
+
+- **[HIGH] DDP workaround #3 was wrong.** The plan proposed a post-backward hook to zero unused gradients, but DDP hangs *inside* `loss.backward()` at the allreduce barrier — too early for a post-backward hook to help. v3: removed option 3. Users with unbalanced category sampling MUST use `find_unused_parameters=True`. Also dropped the `fix_unused_grads` utility from the API; it can't do what its name implied.
 
 ## v2 changelog (vs v1)
 
@@ -173,12 +179,13 @@ LoRA adapter at r=16:
 
 When training under `torch.nn.parallel.DistributedDataParallel`, the per-category `A[c]` and `B[c]` slices are only touched if category `c` appears in a given batch on a given rank. DDP's default `find_unused_parameters=False` requires every parameter with `requires_grad=True` to receive a non-None gradient each step — categories absent from a rank's batch will produce `None` gradient slices and the reducer will hang.
 
-**Three correct usage patterns** (documented in README; one MUST be applied):
+**Two correct usage patterns** (documented in README; one MUST be applied for distributed training):
 1. Set `find_unused_parameters=True` in DDP constructor. Adds a small overhead but is the simplest fix.
 2. Use balanced category sampling across ranks/batches so every category is hit every step.
-3. Install a post-backward hook that zeros gradients for untouched slices (provided as `category_lora.fix_unused_grads(model)`).
 
-A test in `test_layer_forward.py` simulates a single-rank "minibatch missing some categories" case and asserts that `loss.backward()` produces the expected zero-gradient pattern for the untouched slices.
+(A third option — post-backward gradient zeroing — was considered and rejected in plan v3 round-2 review: it can't work because DDP hangs INSIDE `loss.backward()` at the allreduce barrier, before any post-backward hook would fire. The only correct mechanism to "always produce a gradient" would be a forward-time ghost contribution like `output += 0 * (A.sum() + B.sum())` that forces every slice into the autograd graph. This adds compute overhead, regresses sparse efficiency, and is brittle — easier to just enable `find_unused_parameters=True`.)
+
+A test in `test_layer_forward.py` simulates a single-rank "minibatch missing some categories" case and asserts that the present-category slices receive non-zero gradients while absent-category slices receive zero/`None` gradients — documenting the DDP-incompatible failure pattern.
 
 ## File layout
 
@@ -191,11 +198,9 @@ category-lora/
 ├── .github/workflows/ci.yml        # v2: added (pytest on py3.10 with torch 2.5 + peft 0.10+)
 ├── src/category_lora/
 │   ├── __init__.py                 # exports: CategoryLoRALinear, CategoryLoRAConfig,
-│   │                               #          wrap_in_place, unload_adapters,
-│   │                               #          fix_unused_grads, __version__
+│   │                               #          wrap_in_place, unload_adapters, __version__
 │   ├── layer.py                    # CategoryLoRALinear class
-│   ├── wrapper.py                  # CategoryLoRAConfig, wrap_in_place, unload_adapters,
-│   │                               #   fix_unused_grads
+│   ├── wrapper.py                  # CategoryLoRAConfig, wrap_in_place, unload_adapters
 │   └── peft_adapter.py             # register_with_peft (optional)
 ├── tests/
 │   ├── __init__.py
