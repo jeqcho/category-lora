@@ -11,6 +11,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial PLAN.md (v3, GREEN after 2 rounds of subagent review).
 - Repository scaffold: `pyproject.toml`, stub modules, test directory.
 
+## [0.1.1] - 2026-05-21
+
+### Changed
+- ``state_dict()`` now returns the **full state** (base + adapter), making the
+  package compatible with HF Trainer save/load and ``model.save_pretrained``
+  flows. Previously the auto-applied state_dict hook stripped the base which
+  broke checkpoint resumption.
+
+### Added
+- ``CategoryLoRALinear.adapter_state_dict()`` — opt-in API for the v0.1.0-style
+  adapter-only save (returns ``{"A": ..., "B": ...}``).
+- ``CategoryLoRALinear.load_adapter_state_dict(sd)`` — companion loader.
+
+### Migration
+- If you were calling ``adapter.state_dict()`` and expecting adapter-only
+  output, switch to ``adapter.adapter_state_dict()``. The default state_dict
+  now includes the base layer.
+
 ## [0.1.0] - 2026-05-21
 
 ### Added

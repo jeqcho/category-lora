@@ -16,17 +16,6 @@ import torch
 from torch import nn
 
 
-def _strip_base_from_state_dict(module, state_dict, prefix, local_metadata):
-    """state_dict hook: remove ``<prefix>base_layer.*`` keys from the dict.
-
-    The frozen base layer is reconstructed externally on load; only the
-    adapter's own ``A``/``B`` should round-trip through ``state_dict``.
-    """
-    drop = [k for k in list(state_dict.keys()) if k.startswith(prefix + "base_layer.")]
-    for k in drop:
-        del state_dict[k]
-
-
 class CategoryLoRALinear(nn.Module):
     """LoRA adapter for a category-indexed Linear layer.
 
@@ -88,9 +77,6 @@ class CategoryLoRALinear(nn.Module):
         # Internal state guards.
         self._merged = False
         self._unloaded = False
-
-        # state_dict hook strips base_layer.* on save.
-        self._register_state_dict_hook(_strip_base_from_state_dict)
 
     # ----- forward -----
 
@@ -166,6 +152,47 @@ class CategoryLoRALinear(nn.Module):
             delta = self._compute_delta()
             self.base_layer.W.data.sub_(delta.to(self.base_layer.W.dtype))
         self._merged = False
+
+    # ----- adapter-only state_dict (opt-in) -----
+
+    def adapter_state_dict(self) -> dict[str, torch.Tensor]:
+        """Return only the adapter's ``A``/``B`` tensors, without the frozen base.
+
+        Standard ``state_dict()`` (since v0.1.1) returns the full state including
+        the frozen base layer — this matches HF Trainer / standard PyTorch
+        save/load conventions and is what you want for checkpoint-resume.
+
+        Call ``adapter_state_dict()`` when you only need the small (~MB) adapter
+        delta — e.g. to ship a fine-tune as a tiny artifact that's applied on
+        top of an existing base model checkpoint.
+
+        Returns:
+            ``{"A": tensor, "B": tensor}``. The keys are unprefixed; the caller
+            can prefix them if needed for nested model loads.
+        """
+        return {
+            "A": self.A.detach().clone(),
+            "B": self.B.detach().clone(),
+        }
+
+    def load_adapter_state_dict(self, sd: dict[str, torch.Tensor]) -> None:
+        """Load adapter weights produced by :meth:`adapter_state_dict`.
+
+        Args:
+            sd: A dict with ``"A"`` and ``"B"`` keys.
+
+        Raises:
+            KeyError: If either ``"A"`` or ``"B"`` is missing.
+            RuntimeError: If shapes mismatch.
+        """
+        for k in ("A", "B"):
+            if k not in sd:
+                raise KeyError(f"adapter state dict missing key: {k!r}")
+        with torch.no_grad():
+            self.A.data.copy_(sd["A"])
+            self.B.data.copy_(sd["B"])
+
+    # ----- merge_and_unload -----
 
     def merge_and_unload(self) -> nn.Module:
         """Merge and return the (now-mutated) base layer. Terminal operation.
