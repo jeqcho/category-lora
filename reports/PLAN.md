@@ -285,7 +285,7 @@ where = ["src"]
 2. **Subagent #2 (test-writer):** writes `tests/` covering every acceptance criterion. Tests should FAIL initially (red); test_state_dict, test_layer_merge, test_wrapper, test_gr00t_example must produce concrete failures. Tests use synthetic fixtures in `conftest.py` (no large model downloads).
 3. Implement `CategoryLoRALinear` (forward + init) in `layer.py`. Run forward tests → green.
 4. Add `merge_adapter`, `unmerge_adapter`, `merge_and_unload` to the class. Run merge tests → green.
-5. Implement `CategoryLoRAConfig`, `wrap_in_place`, `unload_adapters`, `fix_unused_grads` in `wrapper.py`. Run wrapper tests → green.
+5. Implement `CategoryLoRAConfig`, `wrap_in_place`, `unload_adapters` in `wrapper.py`. Run wrapper tests → green.
 6. Implement `peft_adapter.py::register_with_peft()`. Run peft tests → green (skip if peft unavailable in CI matrix).
 7. Write `examples/gr00t_action_head.py` (synthetic GR00T-shaped model). `test_gr00t_example.py` covers it.
 8. README polish (10-line snippet, install instructions, DDP note).
